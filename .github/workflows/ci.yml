@@ -43,7 +43,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           # 3. Fixed typo: changed .src/ to src/ 
-          context: src/flask-app
+          context: src/flaskapp
           push: true  
           # 2. This will now resolve to ghcr.io/yourusername/flask-app:tag
           tags: ghcr.io/${{ env.FLASKAPP_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
@@ -82,4 +82,3 @@ jobs:
           push: true  
           tags: ghcr.io/${{ env.MYSQL_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
 
-          
