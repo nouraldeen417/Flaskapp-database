@@ -1,0 +1,75 @@
+# This workflow packages the verified app.
+# It is manual on purpose so Day 1 stays focused on CI.
+name: Build Docker Image Workflow
+
+on:
+  # Students start this workflow manually from the Actions tab.
+  workflow_dispatch:
+
+env:
+  # Keep common image values in one place so the build steps stay readable.
+  FLASKAPP_IMAGE_NAME: flask-app
+  MYSQL_IMAGE_NAME: mysql
+
+jobs:
+  build-flask-app-package:
+    # Use a fresh GitHub-hosted runner for the build.
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: image-tag
+        run: |
+          TODAY="$(date -u +%Y-%m-%d)"
+          IMAGE_TAG="${TODAY}-${GITHUB_RUN_ID}"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      # 2. Authenticate against GHCR using the built-in token
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Build and Push the image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true  # Changed from false to true
+          tags: ghcr.io/${{ env.FLASKAPP_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
+  build-mysql:
+    # Use a fresh GitHub-hosted runner for the build.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: image-tag
+        run: |
+          TODAY="$(date -u +%Y-%m-%d)"
+          IMAGE_TAG="${TODAY}-${GITHUB_RUN_ID}"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      # 2. Authenticate against GHCR using the built-in token
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Build and Push the image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true  # Changed from false to true
+          tags: ghcr.io/${{ env.MYSQL_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}          
