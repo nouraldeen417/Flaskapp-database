@@ -43,7 +43,7 @@ spec:
             - name: MYSQL_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: flask-secret
+                  name: mysql-secret
                   key: MYSQL_ROOT_PASSWORD
           resources:
             limits:
