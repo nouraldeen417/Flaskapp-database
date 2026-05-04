@@ -1,6 +1,11 @@
 name: Build Docker Image Workflow
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
   workflow_dispatch:
 
 env:
@@ -10,6 +15,9 @@ env:
 jobs:
   build-flask-app-package:
     runs-on: ubuntu-latest
+    # Define an output so the final job knows exactly which tag was built
+    outputs:
+      image_tag: ${{ steps.image-tag.outputs.image_tag }}
     permissions:
       contents: read
       packages: write
@@ -38,7 +46,7 @@ jobs:
           context: src/flaskapp
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FLASKAPP_IMAGE_NAME }}:latest
+            
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FLASKAPP_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
 
   build-mysql:
@@ -65,11 +73,49 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push flask-app Docker image
+      - name: Build and push mysql Docker image
         uses: docker/build-push-action@v5
         with:
           context: src/mysql
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.MYSQL_IMAGE_NAME }}:latest
+            
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.MYSQL_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
+
+  # --- NEW JOB: UPDATE GIT REPOSITORY ---
+  update-k8s-manifests:
+    # This job only runs AFTER both images are successfully built and pushed
+    needs: [build-flask-app-package, build-mysql]
+    runs-on: ubuntu-latest
+    permissions:
+      # CRITICAL: This allows the action to push commits back to your repo
+      contents: write 
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Update Kubernetes Manifests
+        env:
+          IMAGE_TAG: ${{ needs.build-flask-app-package.outputs.image_tag }}
+          DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          # Replace the Flask image tag in the deployment manifest
+          # (Ensure "manifests/deployment.yaml" matches your actual folder/file name)
+          sed -i "s|image: .*/${{ env.FLASKAPP_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.FLASKAPP_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/flask-deployment.yaml
+          
+          # Replace the MySQL image tag in the deployment manifest
+          sed -i "s|image: .*/${{ env.MYSQL_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.MYSQL_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/mysql-clusterOperator.yaml
+
+      - name: Commit and Push Changes
+        env:
+          IMAGE_TAG: ${{ needs.build-flask-app-package.outputs.image_tag }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add kubernetes/
+          
+          # The [skip ci] tag prevents this commit from accidentally triggering another GitHub Action loop
+          git commit -m "Deploy: Update image tags to ${IMAGE_TAG} [skip ci]" || echo "No changes to commit"
+          git push
