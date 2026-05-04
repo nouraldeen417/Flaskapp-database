@@ -74,18 +74,14 @@ By installing the `nfs-subdir-external-provisioner` and defining a default `Stor
 
 ***
 
-You should add this **Project Execution Map** right at the end of the **Project Overview & Architecture** section, just before you start `## Phase 1: Continuous Integration (CI)`. 
 
-This gives the reader a clear, chronological roadmap of the project before they dive into the technical commands.
-
-Here is the markdown snippet you can copy and paste directly into that spot:
-
-***
 
 ## 🗺️ Project Execution Map
 
 This project was built and deployed in five distinct phases:
 
+0.  **Phase 0: Infrastructure Provisioning (optional)**
+    * stand up the cluster from scratch
 1.  **Phase 1: Continuous Integration (CI)**
     *   Built the Docker images for the Flask app and MySQL custom image using GitHub Actions and pushed them to Docker Hub.
 2.  **Phase 2: Cluster Prerequisites & Storage**
@@ -100,16 +96,29 @@ This project was built and deployed in five distinct phases:
 *** 
 
 
-## Phase 1: Continuous Integration (CI)
 
-Our Continuous Integration pipeline is handled via GitHub Actions. The workflow is designed to build the application and database images and push them to Docker Hub.
 
-### Workflow Details
-*   **Trigger:** Manual execution via `workflow_dispatch`.
-*   **Jobs:** Two parallel jobs (`build-flask-app-package` and `build-mysql`) to speed up the execution time.
-*   **Tagging Strategy:** Each image receives two tags:
-    1.  `latest`: Simplifies the Kubernetes deployment manifests by providing a fixed tag to pull the most recent build.
-    2.  `YYYY-MM-DD-<run-id>`: A unique, traceable tag used for version control and potential rollbacks.
+## Phase 0: Infrastructure Provisioning (Prerequisite)
+
+This GitOps repository assumes you already have a running, healthy Kubernetes cluster. However, following Infrastructure as Code (IaC) best practices, the underlying cluster infrastructure provisioning is also fully automated. 
+
+If you need to stand up the cluster from scratch (configuring the Load Balancer, Master nodes, Worker nodes, and network prerequisites), you can use my dedicated Ansible and `kubeadm` automation repository:
+
+🔗 **[Automated Kubeadm & Ansible Cluster Provisioner](https://github.com/nouraldeen417/kubeadm-ansible-cluster)**
+
+Once your bare-metal or virtual infrastructure is provisioned and the Kubernetes API is responding, you can return to this guide and proceed to Phase 1 to begin the application lifecycle and GitOps synchronization.
+
+***
+
+## Phase 1: Continuous Integration (CI) & GitOps Automation
+
+Our Continuous Integration pipeline is handled via GitHub Actions. It is designed not just to build images, but to automatically trigger our GitOps deployment loop.
+
+### The GitOps "Image Updater" Pattern
+CI pipeline follows a three-step automated process:
+1.  **Build:** Compiles the Flask and MySQL images.
+2.  **Tag:** Tags the images dynamically using the current date and GitHub Run ID (e.g., `2026-05-04-12345`).
+3.  **Update Manifests:** An automated bot modifies the Kubernetes YAML files in the repository with the new specific image tag and commits the changes. This commit triggers ArgoCD to synchronize the cluster.
 
 ### GitHub Actions Workflow (`ci.yml`)
 
@@ -117,6 +126,11 @@ Our Continuous Integration pipeline is handled via GitHub Actions. The workflow 
 name: Build Docker Image Workflow
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
   workflow_dispatch:
 
 env:
@@ -126,6 +140,9 @@ env:
 jobs:
   build-flask-app-package:
     runs-on: ubuntu-latest
+    # Define an output so the final job knows exactly which tag was built
+    outputs:
+      image_tag: ${{ steps.image-tag.outputs.image_tag }}
     permissions:
       contents: read
       packages: write
@@ -154,7 +171,6 @@ jobs:
           context: src/flaskapp
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FLASKAPP_IMAGE_NAME }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FLASKAPP_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
 
   build-mysql:
@@ -187,10 +203,45 @@ jobs:
           context: src/mysql
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.MYSQL_IMAGE_NAME }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.MYSQL_IMAGE_NAME }}:${{ steps.image-tag.outputs.image_tag }}
-```
 
+  # --- NEW JOB: UPDATE GIT REPOSITORY ---
+  update-k8s-manifests:
+    # This job only runs AFTER both images are successfully built and pushed
+    needs: [build-flask-app-package, build-mysql]
+    runs-on: ubuntu-latest
+    permissions:
+      # CRITICAL: This allows the action to push commits back to your repo
+      contents: write 
+    
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Update Kubernetes Manifests
+        env:
+          IMAGE_TAG: ${{ needs.build-flask-app-package.outputs.image_tag }}
+          DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          # Replace the Flask image tag in the deployment manifest
+          sed -i "s|image: .*/${{ env.FLASKAPP_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.FLASKAPP_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/flask-deployment.yml
+          
+          # Replace the MySQL image tag in the deployment manifest
+          sed -i "s|image: .*/${{ env.MYSQL_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.MYSQL_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/mysql-clusterOperator.yml
+
+      - name: Commit and Push Changes
+        env:
+          IMAGE_TAG: ${{ needs.build-flask-app-package.outputs.image_tag }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          git add kubernetes/
+          
+          # The [skip ci] tag prevents this commit from accidentally triggering another GitHub Action loop
+          git commit -m "Deploy: Update image tags to ${IMAGE_TAG} [skip ci]" || echo "No changes to commit"
+          git push
+```
 ---
 
 ## Phase 2: Cluster Prerequisites & Storage
