@@ -102,10 +102,10 @@ jobs:
         run: |
           # Replace the Flask image tag in the deployment manifest
           # (Ensure "manifests/deployment.yaml" matches your actual folder/file name)
-          sed -i "s|image: .*/${{ env.FLASKAPP_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.FLASKAPP_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/flask-deployment.yaml
+          sed -i "s|image: .*/${{ env.FLASKAPP_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.FLASKAPP_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/flask-deployment.yml
           
           # Replace the MySQL image tag in the deployment manifest
-          sed -i "s|image: .*/${{ env.MYSQL_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.MYSQL_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/mysql-clusterOperator.yaml
+          sed -i "s|image: .*/${{ env.MYSQL_IMAGE_NAME }}:.*|image: ${DOCKER_USER}/${{ env.MYSQL_IMAGE_NAME }}:${IMAGE_TAG}|g" kubernetes/mysql-clusterOperator.yml
 
       - name: Commit and Push Changes
         env:
