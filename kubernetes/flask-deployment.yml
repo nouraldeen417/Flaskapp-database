@@ -19,7 +19,7 @@ spec:
         - name: dockerhub-secret
       containers:
         - name: flask-app
-          image: nouraldeen152/flask-app:latest
+          image: nouraldeen152/flask-app:2026-05-04-25325030853
           imagePullPolicy: Always
           ports:
             - containerPort: 5002

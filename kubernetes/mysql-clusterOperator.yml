@@ -13,7 +13,7 @@ spec:
       app: mysql
     containers:
       - name: mysql
-        image: nouraldeen152/mysql:latest
+        image: nouraldeen152/mysql:2026-05-04-25325030853
         imagePullPolicy: Always   
   datadirVolumeClaimTemplate:
     accessModes:
